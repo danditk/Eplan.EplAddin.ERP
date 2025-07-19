@@ -8,92 +8,57 @@ namespace Eplan.EplAddin.ERP
 {
     public class AddInModule : IEplAddIn
     {
+        // Ten katalog będzie tym samym, w którym wrzucisz wszystkie DLL (wraz z ERP.dll)
+        private static readonly string _addinsDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+
         public bool OnRegister(ref bool bLoadOnStart)
         {
             bLoadOnStart = true;
             return true;
         }
 
-        public bool OnUnregister()
-        {
-            return true;
-        }
+        public bool OnUnregister() => true;
 
         public bool OnInit()
         {
-            // Ścieżka do folderu z DLL (zmień jeśli używasz innego katalogu)
-            string dllFolder = Path.Combine(
-                AppDomain.CurrentDomain.BaseDirectory,
-                "Addins", "Eplan.EplAddin.ERP", "Libs");
+            // Podpinamy resolver, który będzie szukał zależności w katalogu dodatku erp
+            AppDomain.CurrentDomain.AssemblyResolve += Resolver;
+            return true;
+        }
 
-            AppDomain.CurrentDomain.AssemblyResolve += (sender, args) =>
+        private Assembly Resolver(object sender, ResolveEventArgs args)
+        {
+            // Przykład args.Name => "ClosedXML, Version=0.95.4.0, ..."
+
+            string shortName = new AssemblyName(args.Name).Name + ".dll";
+            string probe = Path.Combine(_addinsDir, shortName);
+
+            if (File.Exists(probe))
             {
                 try
                 {
-                    string assemblyName = new AssemblyName(args.Name).Name + ".dll";
-                    string dllPath = Path.Combine(dllFolder, assemblyName);
-
-                    if (File.Exists(dllPath))
-                    {
-                        return Assembly.LoadFrom(dllPath);
-                    }
-                    else
-                    {
-                        LogMissingAssembly(assemblyName, dllFolder, "File not found");
-                    }
+                    return Assembly.LoadFrom(probe);
                 }
                 catch (Exception ex)
                 {
-                    LogMissingAssembly(args.Name, dllFolder, ex.ToString());
+                    MessageBox.Show($"Błąd ładowania {shortName}:\n{ex.Message}",
+                                    "Resolver Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
-
-                return null;
-            };
-
-            // 💡 Debug info: pokaż z jakiej lokalizacji ładowany jest ClosedXML
-            try
-            {
-                var loadedPath = typeof(ClosedXML.Excel.XLWorkbook).Assembly.Location;
-                MessageBox.Show("ClosedXML załadowano z:\n" + loadedPath, "Diagnostyka DLL");
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show("ClosedXML NIE załadowano.\n" + ex.ToString(), "Błąd DLL");
             }
 
-            return true;
+            // jeśli go tu nie ma, zwracamy null i .NET pójdzie dalej (GAC / inne ścieżki)
+            return null;
         }
 
         public bool OnInitGui()
         {
-            new CommandLineInterpreter().Execute("RegisterAction /Name:CheckAvailability /Namespace:Eplan.EplAddin.ERP.CheckAvailability");
-            new CommandLineInterpreter().Execute("RegisterAction /Name:AnalyzeBomWithPrices /Namespace:Eplan.EplAddin.ERP.AnalyzeBomWithPrices");
+            var cli = new CommandLineInterpreter();
+            cli.Execute("RegisterAction /Name:CheckAvailability /Namespace:Eplan.EplAddin.ERP.CheckAvailability");
+            cli.Execute("RegisterAction /Name:AnalyzeBomWithPrices /Namespace:Eplan.EplAddin.ERP.AnalyzeBomWithPrices");
             return true;
         }
 
-        public bool OnExit()
-        {
-            return true;
-        }
-
-        private void LogMissingAssembly(string name, string path, string reason)
-        {
-            try
-            {
-                string logPath = @"C:\EplanData\addin_errors.log";
-                Directory.CreateDirectory(Path.GetDirectoryName(logPath));
-                using (var sw = new StreamWriter(logPath, true))
-                {
-                    sw.WriteLine($"[{DateTime.Now}] Błąd ładowania DLL: {name}");
-                    sw.WriteLine($"  Szukano w: {path}");
-                    sw.WriteLine($"  Powód: {reason}");
-                    sw.WriteLine();
-                }
-            }
-            catch
-            {
-                // Nie logujemy błędów z logowania ;)
-            }
-        }
+        public bool OnExit() => true;
     }
 }
+//todo Dodać obsługę deadline oraz budżetu
