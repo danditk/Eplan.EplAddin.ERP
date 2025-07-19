@@ -8,8 +8,9 @@ namespace Eplan.EplAddin.ERP
 {
     public class AddInModule : IEplAddIn
     {
-        // Ten katalog będzie tym samym, w którym wrzucisz wszystkie DLL (wraz z ERP.dll)
-        private static readonly string _addinsDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+        // katalog z DLL-ami (ERP.dll + wszystkie potrzebne biblioteki)
+        private static readonly string _addinsDir =
+            Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
 
         public bool OnRegister(ref bool bLoadOnStart)
         {
@@ -21,39 +22,32 @@ namespace Eplan.EplAddin.ERP
 
         public bool OnInit()
         {
-            // Podpinamy resolver, który będzie szukał zależności w katalogu dodatku erp
+            // rejestrujemy resolver, by ładował ClosedXML i inne z folderu dodatku
             AppDomain.CurrentDomain.AssemblyResolve += Resolver;
             return true;
         }
 
         private Assembly Resolver(object sender, ResolveEventArgs args)
         {
-            // Przykład args.Name => "ClosedXML, Version=0.95.4.0, ..."
-
             string shortName = new AssemblyName(args.Name).Name + ".dll";
             string probe = Path.Combine(_addinsDir, shortName);
-
             if (File.Exists(probe))
             {
-                try
-                {
-                    return Assembly.LoadFrom(probe);
-                }
+                try { return Assembly.LoadFrom(probe); }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Błąd ładowania {shortName}:\n{ex.Message}",
-                                    "Resolver Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show(
+                        $"Błąd ładowania {shortName}:\n{ex.Message}",
+                        "Resolver Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
-
-            // jeśli go tu nie ma, zwracamy null i .NET pójdzie dalej (GAC / inne ścieżki)
             return null;
         }
 
         public bool OnInitGui()
         {
             var cli = new CommandLineInterpreter();
-            cli.Execute("RegisterAction /Name:CheckAvailability /Namespace:Eplan.EplAddin.ERP.CheckAvailability");
+            cli.Execute("RegisterAction /Name:CheckAvailability   /Namespace:Eplan.EplAddin.ERP.CheckAvailability");
             cli.Execute("RegisterAction /Name:AnalyzeBomWithPrices /Namespace:Eplan.EplAddin.ERP.AnalyzeBomWithPrices");
             return true;
         }
@@ -61,4 +55,3 @@ namespace Eplan.EplAddin.ERP
         public bool OnExit() => true;
     }
 }
-//todo Dodać obsługę deadline oraz budżetu
