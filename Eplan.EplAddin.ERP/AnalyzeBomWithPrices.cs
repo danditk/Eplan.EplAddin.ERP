@@ -21,18 +21,15 @@ public class AnalyzeBomWithPrices : IEplAction
     private TextBox _txtBudget;
     private RadioButton _rbDeadlineFirst, _rbBudgetFirst;
     private DataGridView _dgv;
-    private WinFormsLabel _lblMinCost, _lblMaxCost, _lblEarliest, _lblLatest, _lblTotal;
+    private WinFormsLabel _lblMinCost, _lblMaxCost, _lblEarliest, _lblLatest, _lblTotal, _lblFinalLatest;
+    private Button _btnRecalc, _btnExport;
     private List<RowOffer> _selectedOffers;
 
     private class RowOffer
     {
-        // podstawowe
         public string CatalogNumber, EAN, ERP, Category;
         public int Qty, InternalStock;
         public decimal LastPurchasePrice;
-        // dane hurtowni w GUI
-        public Dictionary<string, (decimal Price, decimal Discount, int Stock, int Delivery)> SupplierData;
-        // wybrana oferta
         public string ChosenSupplier;
         public decimal ChosenPrice;
         public int ChosenDelivery;
@@ -40,24 +37,24 @@ public class AnalyzeBomWithPrices : IEplAction
 
     public bool Execute(ActionCallingContext ctx)
     {
-        // CSV
+        // 1) Wczytanie CSV
         string csvFile = @"C:\EplanData\test_database_bom_szlifierka_extended.csv";
         if (!File.Exists(csvFile))
         {
             MessageBox.Show($"Nie znaleziono pliku:\n{csvFile}", "Błąd");
             return false;
         }
-        var allRows = File.ReadAllLines(csvFile)
-                          .Select(l => l.Split(','))
-                          .ToList();
-        var header = allRows[0];
-        var csvRows = allRows.Skip(1)
+        var allLines = File.ReadAllLines(csvFile)
+                           .Select(l => l.Split(','))
+                           .ToList();
+        var header = allLines[0];
+        var csvRows = allLines.Skip(1)
             .Where(r => r.Length == header.Length)
             .Select(r => header.Zip(r, (h, v) => (h, v))
                                .ToDictionary(x => x.h, x => x.v, StringComparer.OrdinalIgnoreCase))
             .ToList();
 
-        // BOM z EPLAN
+        // 2) Zliczenie BOM z projektu
         var project = new SelectionSet().GetCurrentProject(true);
         if (project == null)
         {
@@ -76,7 +73,7 @@ public class AnalyzeBomWithPrices : IEplAction
             return false;
         }
 
-        // GUI
+        // 3) Budowa GUI
         var form = new Form
         {
             Text = "Analiza BOM",
@@ -85,7 +82,12 @@ public class AnalyzeBomWithPrices : IEplAction
             StartPosition = FormStartPosition.CenterScreen
         };
 
-        var panel = new Panel { Dock = DockStyle.Top, Height = 120, BackColor = Color.LightGray };
+        var panel = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 150,
+            BackColor = Color.WhiteSmoke
+        };
         form.Controls.Add(panel);
 
         // Deadline
@@ -100,62 +102,66 @@ public class AnalyzeBomWithPrices : IEplAction
         panel.Controls.Add(_dtpDeadline);
 
         // Budget
-        panel.Controls.Add(new WinFormsLabel { Text = "Budget [PLN]:", Location = new Point(200, 10), AutoSize = true });
-        _txtBudget = new TextBox { Text = "0", Location = new Point(200, 30), Width = 100 };
+        panel.Controls.Add(new WinFormsLabel { Text = "Budget [PLN]:", Location = new Point(240, 10), AutoSize = true });
+        _txtBudget = new TextBox { Text = "0", Location = new Point(240, 30), Width = 120 };
         panel.Controls.Add(_txtBudget);
 
         // Priorytet
-        _rbDeadlineFirst = new RadioButton { Text = "Priorytet Deadline", Location = new Point(350, 10), Checked = true };
-        _rbBudgetFirst = new RadioButton { Text = "Priorytet Budget", Location = new Point(350, 30) };
+        _rbDeadlineFirst = new RadioButton { Text = "Priorytet Deadline", Location = new Point(400, 10), AutoSize = true, Checked = true };
+        _rbBudgetFirst = new RadioButton { Text = "Priorytet Budget", Location = new Point(400, 35), AutoSize = true };
         panel.Controls.Add(_rbDeadlineFirst);
         panel.Controls.Add(_rbBudgetFirst);
 
         // Przyciki
-        var btnRecalc = new Button { Text = "PRZELICZ", Location = new Point(540, 25), Width = 100 };
-        panel.Controls.Add(btnRecalc);
-        var btnExport = new Button { Text = "Eksport Excel", Location = new Point(660, 25), Width = 120 };
-        panel.Controls.Add(btnExport);
+        _btnRecalc = new Button { Text = "PRZELICZ", Location = new Point(580, 30), Width = 100 };
+        _btnExport = new Button { Text = "Eksport Excel", Location = new Point(700, 30), Width = 120 };
+        panel.Controls.Add(_btnRecalc);
+        panel.Controls.Add(_btnExport);
 
         // Podsumowanie
-        _lblMinCost = new WinFormsLabel { Location = new Point(10, 60), AutoSize = true };
-        _lblMaxCost = new WinFormsLabel { Location = new Point(200, 60), AutoSize = true };
-        _lblEarliest = new WinFormsLabel { Location = new Point(10, 90), AutoSize = true };
-        _lblLatest = new WinFormsLabel { Location = new Point(200, 90), AutoSize = true };
-        _lblTotal = new WinFormsLabel { Location = new Point(400, 90), AutoSize = true, Font = new Font(SystemFonts.DefaultFont, FontStyle.Bold) };
-        panel.Controls.AddRange(new Control[] { _lblMinCost, _lblMaxCost, _lblEarliest, _lblLatest, _lblTotal });
+        _lblMinCost = new WinFormsLabel { Location = new Point(240, 60), AutoSize = true };
+        _lblMaxCost = new WinFormsLabel { Location = new Point(240, 85), AutoSize = true };
+        _lblEarliest = new WinFormsLabel { Location = new Point(10, 60), AutoSize = true };
+        _lblLatest = new WinFormsLabel { Location = new Point(10, 85), AutoSize = true };
+        _lblTotal = new WinFormsLabel { Location = new Point(900, 60), AutoSize = true, Font = new Font(SystemFonts.DefaultFont, FontStyle.Bold) };
+        _lblFinalLatest = new WinFormsLabel { Location = new Point(900, 90), AutoSize = true, Font = new Font(SystemFonts.DefaultFont, FontStyle.Italic) };
+        panel.Controls.AddRange(new Control[] { _lblMinCost, _lblMaxCost, _lblEarliest, _lblLatest, _lblTotal, _lblFinalLatest });
 
-        // DataGrid
+        // DataGridView – poniżej panelu
         _dgv = new DataGridView
         {
-            Dock = DockStyle.Fill,
+            Location = new Point(0, panel.Height),
+            Width = form.ClientSize.Width,
+            Height = form.ClientSize.Height - panel.Height,
+            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
             ReadOnly = true,
             AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.AllCells,
             AllowUserToAddRows = false
         };
         form.Controls.Add(_dgv);
 
-        // Zdarzenia
-        btnRecalc.Click += (s, e) =>
+        // Eventy
+        _btnRecalc.Click += (s, e) =>
         {
             if (!decimal.TryParse(_txtBudget.Text, NumberStyles.Any, CultureInfo.InvariantCulture, out var b))
             {
-                MessageBox.Show("Błędny budget"); return;
+                MessageBox.Show("Błędny budget", "Błąd");
+                return;
             }
             Recalculate(bom, csvRows, header, b, _dtpDeadline.Value.Date);
         };
-        btnExport.Click += (s, e) =>
+        _btnExport.Click += (s, e) =>
         {
             ExportToExcel(
                 project.ProjectName,
                 _selectedOffers,
                 _dtpDeadline.Value.Date,
-                decimal.TryParse(_txtBudget.Text, NumberStyles.Any, CultureInfo.InvariantCulture, out var b) ? b : 0m,
-                _rbDeadlineFirst.Checked ? "Deadline" : "Budget"
-            );
+                decimal.TryParse(_txtBudget.Text, NumberStyles.Any, CultureInfo.InvariantCulture, out var b2) ? b2 : 0m,
+                _rbDeadlineFirst.Checked ? "Deadline" : "Budget");
         };
 
-        // Pierwsze przeliczenie
-        btnRecalc.PerformClick();
+        // Automatyczne pierwsze przeliczenie po wczytaniu formy
+        form.Load += (s, e) => _btnRecalc.PerformClick();
 
         form.ShowDialog();
         return true;
@@ -171,7 +177,7 @@ public class AnalyzeBomWithPrices : IEplAction
         _selectedOffers = new List<RowOffer>();
         var dt = new DataTable();
 
-        // Definiujemy kolumny GUI: wszystkie hurtownie
+        // GUI: wszystkie hurtownie + kolumny wyborcze
         foreach (var col in new[] { "CatalogNumber", "EAN_Code", "ERP_Code", "Category", "Qty", "Stock", "LastPurchasePrice" })
             dt.Columns.Add(col);
         foreach (var sup in new[] { "TME", "RS", "Farnell", "Conrad", "Elfa" })
@@ -181,7 +187,6 @@ public class AnalyzeBomWithPrices : IEplAction
             dt.Columns.Add($"{sup}_Stock");
             dt.Columns.Add($"{sup}_Delivery");
         }
-        // kolumny wyboru
         dt.Columns.Add("ChosenSupplier");
         dt.Columns.Add("ChosenPrice");
         dt.Columns.Add("ChosenDelivery");
@@ -197,15 +202,13 @@ public class AnalyzeBomWithPrices : IEplAction
             var rowCsv = csvRows.FirstOrDefault(r => r["PartNo"] == pn);
             if (rowCsv == null) continue;
 
-            // Pozycja
-            var offerList = new List<RowOffer>();
-
-            // Wspólne dane
+            // Zbierz oferty
+            var offers = new List<RowOffer>();
             int stock = int.TryParse(rowCsv["InternalStock"], out var st) ? st : 0;
-            decimal lastPrice = decimal.TryParse(rowCsv["LastPrice"], NumberStyles.Any, CultureInfo.InvariantCulture, out var lp) ? lp : 0m;
+            decimal lp = decimal.TryParse(rowCsv["LastPrice"], NumberStyles.Any, CultureInfo.InvariantCulture, out var lpVal) ? lpVal : 0m;
 
             // Magazyn
-            offerList.Add(new RowOffer
+            offers.Add(new RowOffer
             {
                 CatalogNumber = rowCsv["CatalogNumber"],
                 EAN = rowCsv["EAN_Code"],
@@ -213,9 +216,9 @@ public class AnalyzeBomWithPrices : IEplAction
                 Category = rowCsv["Category"],
                 Qty = qty,
                 InternalStock = stock,
-                LastPurchasePrice = lastPrice,
+                LastPurchasePrice = lp,
                 ChosenSupplier = "Magazyn",
-                ChosenPrice = lastPrice,
+                ChosenPrice = lp,
                 ChosenDelivery = 0
             });
 
@@ -228,8 +231,8 @@ public class AnalyzeBomWithPrices : IEplAction
                 int del = sup == "TME" ? 2 : sup == "RS" ? 3 : sup == "Farnell" ? 5 : sup == "Conrad" ? 6 : 4;
                 if (del > daysAllowed) continue;
 
-                decimal finalPrice = Math.Round(price * (1 - disc / 100m), 2);
-                offerList.Add(new RowOffer
+                decimal fp = Math.Round(price * (1 - disc / 100m), 2);
+                offers.Add(new RowOffer
                 {
                     CatalogNumber = rowCsv["CatalogNumber"],
                     EAN = rowCsv["EAN_Code"],
@@ -237,23 +240,23 @@ public class AnalyzeBomWithPrices : IEplAction
                     Category = rowCsv["Category"],
                     Qty = qty,
                     InternalStock = stock,
-                    LastPurchasePrice = lastPrice,
+                    LastPurchasePrice = lp,
                     ChosenSupplier = sup,
-                    ChosenPrice = finalPrice,
+                    ChosenPrice = fp,
                     ChosenDelivery = del
                 });
             }
 
-            // Min/Max/widełki
-            sumMin += offerList.Min(o => o.ChosenPrice * qty);
-            sumMax += offerList.Max(o => o.ChosenPrice * qty);
-            earliest = Math.Max(earliest, offerList.Min(o => o.ChosenDelivery));
-            latest = Math.Max(latest, offerList.Max(o => o.ChosenDelivery));
+            // Zakresy
+            sumMin += offers.Min(o => o.ChosenPrice * qty);
+            sumMax += offers.Max(o => o.ChosenPrice * qty);
+            earliest = Math.Max(earliest, offers.Min(o => o.ChosenDelivery));
+            latest = Math.Max(latest, offers.Max(o => o.ChosenDelivery));
 
             // Wybór wg priorytetu
-            RowOffer chosen = _rbDeadlineFirst.Checked
-                ? offerList.OrderBy(o => o.ChosenDelivery).ThenBy(o => o.ChosenPrice).First()
-                : offerList.OrderBy(o => o.ChosenPrice).ThenBy(o => o.ChosenDelivery).First();
+            var chosen = _rbDeadlineFirst.Checked
+                ? offers.OrderBy(o => o.ChosenDelivery).ThenBy(o => o.ChosenPrice).First()
+                : offers.OrderBy(o => o.ChosenPrice).ThenBy(o => o.ChosenDelivery).First();
 
             _selectedOffers.Add(chosen);
             sumTotal += chosen.ChosenPrice * qty;
@@ -267,7 +270,6 @@ public class AnalyzeBomWithPrices : IEplAction
             dr["Qty"] = chosen.Qty;
             dr["Stock"] = chosen.InternalStock;
             dr["LastPurchasePrice"] = chosen.LastPurchasePrice.ToString("0.00");
-
             foreach (var sup in new[] { "TME", "RS", "Farnell", "Conrad", "Elfa" })
             {
                 dr[$"{sup}_Price"] = rowCsv[$"{sup}_Price"];
@@ -275,7 +277,6 @@ public class AnalyzeBomWithPrices : IEplAction
                 dr[$"{sup}_Stock"] = rowCsv[$"{sup}_Stock"];
                 dr[$"{sup}_Delivery"] = new[] { 2, 3, 5, 6, 4 }[Array.IndexOf(new[] { "TME", "RS", "Farnell", "Conrad", "Elfa" }, sup)];
             }
-
             dr["ChosenSupplier"] = chosen.ChosenSupplier;
             dr["ChosenPrice"] = chosen.ChosenPrice.ToString("0.00");
             dr["ChosenDelivery"] = chosen.ChosenDelivery;
@@ -283,13 +284,25 @@ public class AnalyzeBomWithPrices : IEplAction
         }
 
         // Aktualizuj summary
-        _lblMinCost.Text = $"MinCost: {sumMin:0.00}";
-        _lblMaxCost.Text = $"MaxCost: {sumMax:0.00}";
+        _lblMinCost.Text = $"MinCost:  {sumMin:0.00}";
+        _lblMaxCost.Text = $"MaxCost:  {sumMax:0.00}";
         _lblEarliest.Text = $"Earliest: {DateTime.Now.AddDays(earliest):yyyy-MM-dd} (+{earliest}d)";
-        _lblLatest.Text = $"Latest: {DateTime.Now.AddDays(latest):yyyy-MM-dd} (+{latest}d)";
-        _lblTotal.Text = $"Total: {sumTotal:0.00}";
+        _lblLatest.Text = $"Latest:   {DateTime.Now.AddDays(latest):yyyy-MM-dd} (+{latest}d)";
+        _lblTotal.Text = $"Total:    {sumTotal:0.00}";
 
-        // Bind i pogrubienie chosen
+        // FinalLatest
+        if (_rbDeadlineFirst.Checked && sumTotal > sumMin)
+        {
+            int newEarliest = _selectedOffers.Min(o => o.ChosenDelivery);
+            if (newEarliest < latest)
+                _lblFinalLatest.Text = $"FinalLatest: {DateTime.Now.AddDays(newEarliest):yyyy-MM-dd} (+{newEarliest}d)";
+            else
+                _lblFinalLatest.Text = "";
+        }
+        else
+            _lblFinalLatest.Text = "";
+
+        // Bind i pogrubienie
         _dgv.DataSource = dt;
         foreach (DataGridViewRow rw in _dgv.Rows)
         {
@@ -321,8 +334,8 @@ public class AnalyzeBomWithPrices : IEplAction
             ws.Cell(1, 4).Value = "Priority"; ws.Cell(1, 5).Value = priority;
             ws.Cell(1, 7).Value = "Total"; ws.Cell(1, 8).Value = data.Sum(o => o.ChosenPrice * o.Qty);
             int e = data.Min(o => o.ChosenDelivery), l = data.Max(o => o.ChosenDelivery);
-            ws.Cell(2, 4).Value = "Earliest"; ws.Cell(2, 5).Value = $"{DateTime.Now.AddDays(e):yyyy-MM-dd} (+{e}d)";
-            ws.Cell(2, 7).Value = "Latest"; ws.Cell(2, 8).Value = $"{DateTime.Now.AddDays(l):yyyy-MM-dd} (+{l}d)";
+            ws.Cell(2, 4).Value = "EarliestFinish"; ws.Cell(2, 5).Value = $"{DateTime.Now.AddDays(e):yyyy-MM-dd} (+{e}d)";
+            ws.Cell(2, 7).Value = "LatestFinish"; ws.Cell(2, 8).Value = $"{DateTime.Now.AddDays(l):yyyy-MM-dd} (+{l}d)";
 
             // Nagłówki row5
             var hdr = new[] { "CatalogNumber","EAN_Code","ERP_Code","Category","Qty","Stock","LastPurchasePrice",
@@ -344,6 +357,7 @@ public class AnalyzeBomWithPrices : IEplAction
                 ws.Cell(6 + r, 9).Value = o.ChosenPrice;
                 ws.Cell(6 + r, 10).Value = o.ChosenDelivery;
             }
+
             wb.SaveAs(file);
         }
         MessageBox.Show($"Zapisano: {file}", "OK");
@@ -351,7 +365,9 @@ public class AnalyzeBomWithPrices : IEplAction
 
     public bool OnRegister(ref string Name, ref int Ordinal)
     {
-        Name = "AnalyzeBomWithPrices"; Ordinal = 50; return true;
+        Name = "AnalyzeBomWithPrices";
+        Ordinal = 50;
+        return true;
     }
-    public void GetActionProperties(ref ActionProperties properties) { }
+    public void GetActionProperties(ref ActionProperties props) { }
 }
